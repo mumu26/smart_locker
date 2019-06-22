@@ -11,7 +11,7 @@
 
 static struct espconn *espconn_ptr = NULL;
 static web_frame rx_frame;
-static uint8 sw_version[SW_VERSION_LEN]={"20190615.01"};
+static uint8 sw_version[SW_VERSION_LEN]={"20190622.01"};
 uint8 sign_in_done = 0;
 static uint8 g_company_id[COMPANY_ID_LEN] = {'0', '1'};
 static uint8 g_equip_id[EQUIP_ID_LEN] = {"XXX"};
