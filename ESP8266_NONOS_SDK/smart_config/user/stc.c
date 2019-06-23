@@ -41,7 +41,7 @@ void stc_process_server_cmd()
 		//sign in ack
 		case '0':			
 			if (sign_in_done == 1) {
-				sign_in_done = 2;
+				sign_in_done = 0;
 				os_printf("sign in is completed\n");
 			} else {
 				os_printf("sign in is invalid\n");
@@ -110,6 +110,7 @@ void stc_process_server_cmd()
 			stc_encap_send(NULL, 0, &rx_frame);
 			break;
 		case 'A':
+			os_printf("alarm report is recv by server\n");
 			os_timer_disarm(&mcu_wait_timer[RPT_ALARM_TIMER]);
 			htc_send_reply(&htc_reply_cmd);
 			break;
@@ -146,7 +147,6 @@ void ICACHE_FLASH_ATTR espconn_connect_cb(void *arg)
 	    //always sign in when connect to avoid unknown of passive disconnect
 		stc_sign_in();
 		if (sign_in_done == 0) {
-			//stc_sign_in();
 			sign_in_done = 1;
 		}
 	}
@@ -164,6 +164,7 @@ void ICACHE_FLASH_ATTR espconn_recon_cb(void *arg, sint8 errType)
 void ICACHE_FLASH_ATTR espconn_discon_cb(void *arg)
 {
 	g_tcp_stat = TCP_STAT_DISCONNECTED;
+	sign_in_done = 0;
 	os_printf("Enter espconn_discon_cb\n");
 }
 
@@ -315,11 +316,11 @@ uint8 init_tcp_connect() {
 	espconn_ptr->state = ESPCONN_NONE;
 	espconn_ptr->proto.tcp = (esp_tcp *)os_zalloc(sizeof(esp_tcp));
     espconn_ptr->proto.tcp->local_port = espconn_port();
-    //espconn_ptr->proto.tcp->remote_port = 5138;
-    espconn_ptr->proto.tcp->remote_port = 8080;
+    espconn_ptr->proto.tcp->remote_port = 6138;
+    //espconn_ptr->proto.tcp->remote_port = 8080;
 
-	//ip = ipaddr_addr("47.92.213.131");
-	ip = ipaddr_addr("192.168.1.8");
+	ip = ipaddr_addr("47.92.213.131");
+	//ip = ipaddr_addr("192.168.1.8");
     os_memcpy(espconn_ptr->proto.tcp->remote_ip,&ip,sizeof(ip));
     espconn_regist_connectcb(espconn_ptr, espconn_connect_cb);
     espconn_regist_reconcb(espconn_ptr, espconn_recon_cb);
@@ -347,8 +348,10 @@ void stc_encap_send(uint8 *pcontent2, uint16 length2, web_frame *pweb_frame)
 	uint8 i;
 	uint16 length;
 
-	length = FRAME_CONTENT1_LEN + length2;
-	
+	length = FRAME_CONTENT1_LEN;
+	if (length2 != 0)
+		length += length2 + 1; //add '/'
+		
 	send_frame = os_malloc(length + 1);
 	if (NULL == send_frame)
 		os_printf("malloc send_frame fail\n");
