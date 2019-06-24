@@ -21,6 +21,7 @@ uint8 g_tcp_stat = TCP_STAT_DISCONNECTED;
 //uint8 g_req_unlock_completion;
 extern os_timer_t mcu_wait_timer[MAX_TIMER_NUM];
 extern mcu_pkg g_rx_mcu_pkg;
+os_timer_t tcp_hb_timer;  //heart beat, sign in every 3min
 
 void stc_process_server_cmd()
 {
@@ -146,9 +147,10 @@ void ICACHE_FLASH_ATTR espconn_connect_cb(void *arg)
 		premot->remote_ip[3]);
 	    //always sign in when connect to avoid unknown of passive disconnect
 		stc_sign_in();
-		if (sign_in_done == 0) {
-			sign_in_done = 1;
-		}
+		
+		os_timer_disarm(&tcp_hb_timer);
+		os_timer_setfn(&tcp_hb_timer, (os_timer_func_t *)stc_sign_in, NULL);
+		os_timer_arm(&tcp_hb_timer, 180000, 1);
 	}
 	g_tcp_stat = TCP_STAT_CONNECTED;
 	os_timer_disarm(&mcu_wait_timer[INIT_TCP_TIMER]);	
@@ -316,11 +318,11 @@ uint8 init_tcp_connect() {
 	espconn_ptr->state = ESPCONN_NONE;
 	espconn_ptr->proto.tcp = (esp_tcp *)os_zalloc(sizeof(esp_tcp));
     espconn_ptr->proto.tcp->local_port = espconn_port();
-    espconn_ptr->proto.tcp->remote_port = 6138;
-    //espconn_ptr->proto.tcp->remote_port = 8080;
+    //espconn_ptr->proto.tcp->remote_port = 6138;
+    espconn_ptr->proto.tcp->remote_port = 8080;
 
-	ip = ipaddr_addr("47.92.213.131");
-	//ip = ipaddr_addr("192.168.1.8");
+	//ip = ipaddr_addr("47.92.213.131");
+	ip = ipaddr_addr("192.168.1.8");
     os_memcpy(espconn_ptr->proto.tcp->remote_ip,&ip,sizeof(ip));
     espconn_regist_connectcb(espconn_ptr, espconn_connect_cb);
     espconn_regist_reconcb(espconn_ptr, espconn_recon_cb);
@@ -414,6 +416,9 @@ void stc_sign_in()
 	frame_data.equip_type = g_equip_type;
 	frame_data.content1 = content1;
 	stc_encap_send(NULL, 0, &frame_data);
+	if (sign_in_done == 0) {
+		sign_in_done = 1;
+	}
 }
 
 void stc_common_send(uint8 *content1, uint8 *content2, uint8 content2_len)
