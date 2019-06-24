@@ -33,6 +33,7 @@
 #include "smartconfig.h"
 #include "airkiss.h"
 #include "uart.h"
+#include "stc.h"
 
 #define DEVICE_TYPE 		"gh_9e2cff3dfa51" //wechat public number
 #define DEVICE_ID 			"122475" //model ID
@@ -91,6 +92,8 @@ LOCAL os_timer_t ssdp_time_serv;
 uint8_t  lan_buf[200];
 uint16_t lan_buf_len;
 uint8 	 udp_sent_cnt = 0;
+
+uint8 connect_when_ready = 1;  //connect to tcp server immediately after wifi is ready
 
 const airkiss_config_t akconf =
 {
@@ -233,6 +236,9 @@ smartconfig_done(sc_status status, void *pdata)
 				airkiss_start_discover();
             }
             smartconfig_stop();
+			if (1 == connect_when_ready)
+				init_tcp_connect();
+			
             break;
     }
 	
