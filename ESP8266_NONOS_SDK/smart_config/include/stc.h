@@ -1,3 +1,5 @@
+#include "user_interface.h"
+
 uint8 init_tcp_connect();
 
 #define DELIMETER '/'
@@ -27,6 +29,11 @@ typedef struct webframe {
 	uint8 *content1;
 	uint8 *content2;
 } web_frame;
+
+typedef struct saved_stacfg{
+	uint32 cfg_updated; //set this flag if the cfg is updated
+	uint8 checksum_code[CHKSUM_CODE_LEN];
+} saved_sta_param;
 
 enum timer {
 	INIT_TCP_TIMER,

@@ -93,8 +93,10 @@ uint8_t  lan_buf[200];
 uint16_t lan_buf_len;
 uint8 	 udp_sent_cnt = 0;
 
-uint8 connect_when_ready = 1;  //connect to tcp server immediately after wifi is ready
-
+#define SYSTEM_PARTITION_CUSTOMER_PRIV_PARAM                SYSTEM_PARTITION_CUSTOMER_BEGIN
+uint32 priv_param_start_sec;
+saved_sta_param saved_sta_cfg; //should be written to flash
+os_timer_t connect_timer;
 const airkiss_config_t akconf =
 {
 	(airkiss_memset_fn)&memset,
@@ -132,7 +134,6 @@ airkiss_wifilan_time_callback(void)
 	if (ret != 0) {
 		os_printf("UDP send error!");
 	}
-	os_printf("Finish send notify!\n");
 }
 
 LOCAL void ICACHE_FLASH_ATTR
@@ -220,6 +221,16 @@ smartconfig_done(sc_status status, void *pdata)
             struct station_config *sta_conf = pdata;
 	
 	        wifi_station_set_config(sta_conf);
+			
+			//saved_sta_cfg.cfg_updated = 1;
+
+			spi_flash_read((priv_param_start_sec) * SPI_FLASH_SEC_SIZE,
+    		(uint32 *)&saved_sta_cfg, sizeof(saved_sta_param));
+			saved_sta_cfg.cfg_updated = 1;
+			spi_flash_erase_sector(priv_param_start_sec);
+    		spi_flash_write((priv_param_start_sec) * SPI_FLASH_SEC_SIZE,
+        		(uint32 *)&saved_sta_cfg, sizeof(saved_sta_param));
+			
 	        wifi_station_disconnect();
 	        wifi_station_connect();
             break;
@@ -236,8 +247,7 @@ smartconfig_done(sc_status status, void *pdata)
 				airkiss_start_discover();
             }
             smartconfig_stop();
-			if (1 == connect_when_ready)
-				init_tcp_connect();
+			init_tcp_connect();
 			
             break;
     }
@@ -252,15 +262,63 @@ void ICACHE_FLASH_ATTR user_pre_init(void)
 	}
 }
 
+void ICACHE_FLASH_ATTR
+wifi_checkstat(void)
+{
+	static uint8 count=0;
+	uint8 status;
+	struct ip_info ipconfig;
+
+	os_timer_disarm(&connect_timer); //关闭定时器，专心处理结果
+	count++; //延时
+	status = wifi_station_get_connect_status(); //查询WiFi连接结果
+	if(status == STATION_GOT_IP){ //得到IP地址    
+		os_printf("wifi connected.\r\n");
+		init_tcp_connect();
+	} else {
+		if (count < 7) {
+			os_timer_arm(&connect_timer,2000,0);
+		} else {
+			os_printf("wifi connect fail.\r\n");
+			return;
+		}
+	}
+}
 
 void ICACHE_FLASH_ATTR
 user_init(void)
 {
+    partition_item_t partition_item;	
+	struct station_config sta_cfg;
+
+    if (!system_partition_get_item(SYSTEM_PARTITION_CUSTOMER_PRIV_PARAM, &partition_item)) {
+        os_printf("Get partition information fail\n");
+    }
+    //priv_param_start_sec = partition_item.addr/SPI_FLASH_SEC_SIZE;
+	//priv_param_start_sec += 1;  //up mod
+	priv_param_start_sec = 0x79;
 	uart_init(9600, 9600);
 	//UART_SetBaudrate(UART0, 115200);
-    os_printf("SDK version:%s\n", system_get_sdk_version());
-	
-	smartconfig_set_type(SC_TYPE_ESPTOUCH); //SC_TYPE_ESPTOUCH,SC_TYPE_AIRKISS,SC_TYPE_ESPTOUCH_AIRKISS
-    wifi_set_opmode(STATION_MODE);
-    smartconfig_start(smartconfig_done);
+    os_printf("SDK version:%s\n", system_get_sdk_version());	    
+	os_printf("start sec is 0x%x, addr 0x%x\n", priv_param_start_sec, partition_item.addr);
+
+	os_printf("sizeof saved_sta_param is %d\n", sizeof(saved_sta_cfg));
+    spi_flash_read((priv_param_start_sec) * SPI_FLASH_SEC_SIZE,
+    		(uint32 *)&saved_sta_cfg, sizeof(saved_sta_param));
+	//system_param_load(priv_param_start_sec + 1, 0, &esp_param, sizeof(esp_param));
+
+	wifi_set_opmode(STATION_MODE);
+	if (saved_sta_cfg.cfg_updated == 1) {
+		os_printf("connectting to the saved wlan\n");
+	    wifi_station_connect();
+		//开始连接后，过2秒查看连接结果，是否得到了IP.
+		os_timer_disarm(&connect_timer);
+		os_timer_setfn(&connect_timer, (os_timer_func_t *)wifi_checkstat, NULL);
+		os_timer_arm(&connect_timer, 2000, 0);
+	} else {
+		os_printf("No saved sta cfg\n");
+		smartconfig_set_type(SC_TYPE_AIRKISS); //SC_TYPE_ESPTOUCH,SC_TYPE_AIRKISS,SC_TYPE_ESPTOUCH_AIRKISS
+		smartconfig_start(smartconfig_done);
+	}    
+	//wifi_station_set_auto_connect(TRUE);
 }

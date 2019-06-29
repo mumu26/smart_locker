@@ -16,12 +16,13 @@ uint8 sign_in_done = 0;
 static uint8 g_company_id[COMPANY_ID_LEN] = {'0', '1'};
 static uint8 g_equip_id[EQUIP_ID_LEN] = {"XXX"};
 static uint8 g_equip_type[EQUIP_TYPE_LEN] = {"0301A"};
-static uint8 g_checksum_code[CHKSUM_CODE_LEN];
+uint8 g_checksum_code[CHKSUM_CODE_LEN];
+extern  saved_sta_param saved_sta_cfg;
 uint8 g_tcp_stat = TCP_STAT_DISCONNECTED;
-//uint8 g_req_unlock_completion;
 extern os_timer_t mcu_wait_timer[MAX_TIMER_NUM];
 extern mcu_pkg g_rx_mcu_pkg;
 os_timer_t tcp_hb_timer;  //heart beat, sign in every 3min
+extern uint32 priv_param_start_sec;
 
 void stc_process_server_cmd()
 {
@@ -69,9 +70,11 @@ void stc_process_server_cmd()
 		case '4':
 			stc_encap_send(NULL, 0, &rx_frame);
 			//unlock:00
-			if (rx_frame.content2[0] == '0' && rx_frame.content2[1] == '0') {
-				os_timer_disarm(&mcu_wait_timer[REQ_UNLOCK_TIMER]);				
-				if(!memcmp(&rx_frame.content2[2], &g_checksum_code, CHKSUM_CODE_LEN)) {
+			if (rx_frame.content2[0] == '0' && rx_frame.content2[1] == '0') {				
+				os_timer_disarm(&mcu_wait_timer[REQ_UNLOCK_TIMER]);
+				spi_flash_read((priv_param_start_sec) * SPI_FLASH_SEC_SIZE,
+    							(uint32 *)&saved_sta_cfg, sizeof(saved_sta_param));
+				if(!memcmp(&rx_frame.content2[2], saved_sta_cfg.checksum_code, CHKSUM_CODE_LEN)) {
 					os_printf("checksum code is correct!\n");
 					htc_reply_cmd.data1 = RET_SUCC;
 				}
@@ -462,7 +465,7 @@ void gen_rand()
 			srand(system_get_time());
 			res = 65 + rand() % 26;
 		}
-		g_checksum_code[i] = res;
+		g_checksum_code[i] = res;		
 		os_printf("%c ", res);
 	}		
 }

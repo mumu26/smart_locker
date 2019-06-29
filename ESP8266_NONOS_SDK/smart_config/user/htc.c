@@ -9,10 +9,16 @@
 #include "stdlib.h"
 #include "time.h"
 #include "stc.h"
+#include "smartconfig.h"
+#include "airkiss.h"
 
 mcu_pkg g_rx_mcu_pkg={0};
 extern uint8 g_tcp_stat;
 os_timer_t mcu_wait_timer[MAX_TIMER_NUM];
+extern void smartconfig_done(sc_status status, void *pdata);
+extern uint32 priv_param_start_sec;
+extern saved_sta_param saved_sta_cfg;
+extern uint8 g_checksum_code[CHKSUM_CODE_LEN];
 
 unsigned char get_bcc(unsigned char *src, unsigned char len)
 {
@@ -51,7 +57,11 @@ void convert_int2asciihex(uint8 *input, uint8 size, uint8 *output)
 
 uint8 ICACHE_FLASH_ATTR htc_config_entry()
 {
-	return  init_tcp_connect();
+	wifi_set_opmode(STATION_MODE);
+	smartconfig_set_type(SC_TYPE_AIRKISS); //SC_TYPE_ESPTOUCH,SC_TYPE_AIRKISS,SC_TYPE_ESPTOUCH_AIRKISS
+	smartconfig_start(smartconfig_done);
+
+	return  0;
 }
 
 void htc_server_timeout()
@@ -115,6 +125,13 @@ int8 htc_rx_process(uint8 *uart_buf)
 		case MCU_CMD_REMOTE_UNLOCK:
 			os_printf("CMD REMOTE UNLOCK\n"); 
 			gen_rand();
+			/*save checkcode to  flash*/			
+			spi_flash_read((priv_param_start_sec) * SPI_FLASH_SEC_SIZE,
+    		(uint32 *)&saved_sta_cfg, sizeof(saved_sta_param));
+			os_memcpy(saved_sta_cfg.checksum_code, g_checksum_code, CHKSUM_CODE_LEN);
+			spi_flash_erase_sector(priv_param_start_sec);
+    		spi_flash_write((priv_param_start_sec) * SPI_FLASH_SEC_SIZE,
+        		(uint32 *)&saved_sta_cfg, sizeof(saved_sta_param));			
 			stc_req_unlock();
 			htc_start_timer(REQ_UNLOCK_TIMER, REQ_UNLOCK_TIMEOUT);
 			break;
