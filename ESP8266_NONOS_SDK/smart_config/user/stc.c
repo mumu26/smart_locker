@@ -11,7 +11,7 @@
 
 static struct espconn *espconn_ptr = NULL;
 static web_frame rx_frame;
-static uint8 sw_version[SW_VERSION_LEN]={"20190622.01"};
+static uint8 sw_version[SW_VERSION_LEN]={"20190701.01"};
 uint8 sign_in_done = 0;
 static uint8 g_company_id[COMPANY_ID_LEN] = {'0', '1'};
 static uint8 g_equip_id[EQUIP_ID_LEN] = {"XXX"};
@@ -24,7 +24,60 @@ extern mcu_pkg g_rx_mcu_pkg;
 os_timer_t tcp_hb_timer;  //heart beat, sign in every 3min
 extern uint32 priv_param_start_sec;
 
-void stc_process_server_cmd()
+void ICACHE_FLASH_ATTR aes_cbc_128_process(int enc_dec, unsigned char *buf, uint8 len)
+{
+	int i, j;
+    unsigned char key[16] = {'1', '2', '3', 't', 'j', 'z', 'n', 'j', 
+						   'j', '2', '1', 'h', 'u', '9', '9', '0'};
+    //unsigned char buf[64];
+    unsigned char iv[16] = {'B', 'B', 'B', 'B', 'B', 'B', 'B', 'B', 
+    						'B', 'B', 'B', 'B', 'B', 'B', 'B', 'B'};
+	unsigned char prv[16];
+	mbedtls_aes_context ctx;
+	uint8 new_len;
+
+    mbedtls_aes_init( &ctx );
+
+	//length is already set by caller
+	//if (len % 16)
+		//new_len = (1 + len/16) * 16;
+	//else 
+		new_len = len;
+	
+	/*
+     * CBC mode
+     */
+        //memset( iv , 0, 16 );
+        memset( prv, 0, 16 );
+        //memset( buf, 0, 16 );
+
+    if( enc_dec == MBEDTLS_AES_DECRYPT ) {
+        mbedtls_aes_setkey_dec( &ctx, key, 128 );
+
+        for( j = 0; j < 10000; j++ )
+            mbedtls_aes_crypt_cbc( &ctx, enc_dec, new_len, iv, buf, buf );
+
+    } else {
+        mbedtls_aes_setkey_enc( &ctx, key, 128);
+
+        for( j = 0; j < 10000; j++ )
+        {
+            unsigned char tmp[16];
+
+            mbedtls_aes_crypt_cbc( &ctx, enc_dec, new_len, iv, buf, buf );
+
+            memcpy( tmp, prv, 16 );
+            memcpy( prv, buf, 16 );
+            memcpy( buf, tmp, 16 );
+        }
+    }
+
+    mbedtls_aes_free( &ctx );
+
+    return;
+}
+
+void ICACHE_FLASH_ATTR stc_process_server_cmd()
 {
 	uint16 cmd;
 	uint8 i;
@@ -178,6 +231,14 @@ void ICACHE_FLASH_ATTR espconn_recv_cb(void *arg, char *pusrdata, unsigned short
 	uint8 data[10];
 	uint8 index = 0;
 	uint8 i=0;
+#ifdef AES_TEST_MODE
+	uint8 encrypted_data[48] = {	
+	0x37, 0x61, 0x67, 0xE5, 0x39, 0xF9, 0x2F, 0xDD, 0xBB, 0x9E, 0x57, 0x89, 
+	0x0D, 0xE2, 0x79, 0x5B, 0xE0, 0x2A, 0x57, 0xDD, 0xB4, 0xAC, 0xA9, 0x25, 
+	0x3F, 0xEF, 0x01, 0xC8, 0x1B, 0xE4, 0x3C, 0x24, 0xD9, 0x2D, 0xB5, 0xDD, 
+	0x26, 0x7C, 0x97, 0x2D, 0x1D, 0xA6, 0x4F, 0x4B, 0xFD, 0x98, 0xB4, 0xBB, 
+	};
+#endif
 	os_printf("Enter espconn_recv_cb\n");
 
 	os_memset(&rx_frame, 0, sizeof(web_frame));
@@ -186,7 +247,27 @@ void ICACHE_FLASH_ATTR espconn_recv_cb(void *arg, char *pusrdata, unsigned short
 		os_printf("len is too small %d\n", len);
 		return;
 	}
+#ifdef AES_TEST_MODE
+		len = 48;
+#endif
+	/*Decrypt here: TODO*/
+	if (len % 16 != 0) {
+		os_printf("len is %d, should be 16*n bytes, can't be decrypted\n", len);
+		return;
+	}
 
+#ifdef AES_TEST_MODE
+	aes_cbc_128_process(MBEDTLS_AES_DECRYPT, encrypted_data, len);
+	os_printf("Decrypted data is");
+	for (i=0;i<len;i++) {
+		if (i % 16 == 0)
+			os_printf("\n");
+		os_printf("%02x ", encrypted_data[i]);
+	}
+	return;
+#else
+	aes_cbc_128_process(MBEDTLS_AES_DECRYPT, pusrdata, len);
+#endif	
 	/* Start and End frame sanity check */
 	if (pusrdata[0] != DELIMETER 
 		|| pusrdata[1] != START 
@@ -259,60 +340,7 @@ void ICACHE_FLASH_ATTR espconn_send_cb(void *arg)
 	os_printf("Enter espconn_send_cb\n");
 }
 
-int aes_cbc_128_process(int enc_dec, unsigned char *buf, uint8 len)
-{
-	int ret = 0, i, j;
-    unsigned char key[16] = {'1', '2', '3', 't', 'j', 'z', 'n', 'j', 
-						   'j', '2', '1', 'h', 'u', '9', '9', '0'};
-    //unsigned char buf[64];
-    unsigned char iv[16] = {'B', 'B', 'B', 'B', 'B', 'B', 'B', 'B', 
-    						'B', 'B', 'B', 'B', 'B', 'B', 'B', 'B'};
-	unsigned char prv[16];
-	mbedtls_aes_context ctx;
-	uint8 new_len;
-
-    mbedtls_aes_init( &ctx );
-
-	if (len % 16)
-		new_len = (1 + len/16) * 16;
-	else 
-		new_len = len;
-	/*
-     * CBC mode
-     */
-        //memset( iv , 0, 16 );
-        memset( prv, 0, 16 );
-        //memset( buf, 0, 16 );
-
-    if( enc_dec == MBEDTLS_AES_DECRYPT ) {
-        mbedtls_aes_setkey_dec( &ctx, key, 128 );
-
-        for( j = 0; j < 10000; j++ )
-            mbedtls_aes_crypt_cbc( &ctx, enc_dec, new_len, iv, buf, buf );
-
-    } else {
-        mbedtls_aes_setkey_enc( &ctx, key, 128);
-
-        for( j = 0; j < 10000; j++ )
-        {
-            unsigned char tmp[16];
-
-            mbedtls_aes_crypt_cbc( &ctx, enc_dec, new_len, iv, buf, buf );
-
-            memcpy( tmp, prv, 16 );
-            memcpy( prv, buf, 16 );
-            memcpy( buf, tmp, 16 );
-        }
-    }
-	
-    ret = 0;
-
-    mbedtls_aes_free( &ctx );
-
-    return( ret );
-}
-
-uint8 init_tcp_connect() {
+uint8 ICACHE_FLASH_ATTR init_tcp_connect() {
 	uint32 ip = 0;
 	uint8 value;
 	
@@ -347,20 +375,23 @@ uint8 init_tcp_connect() {
  * pcontent2: pointer of content2
  * length2: the length of content2
  */
-void stc_encap_send(uint8 *pcontent2, uint16 length2, web_frame *pweb_frame)
+void ICACHE_FLASH_ATTR stc_encap_send(uint8 *pcontent2, uint16 length2, web_frame *pweb_frame)
 {
 	uint8 *head, *send_frame = NULL;
 	uint8 i;
-	uint16 length;
+	uint16 raw_length, pad_length, total_length;
 
-	length = FRAME_CONTENT1_LEN;
+	raw_length = FRAME_CONTENT1_LEN;
 	if (length2 != 0)
-		length += length2 + 1; //add '/'
-		
-	send_frame = os_malloc(length + 1);
+		raw_length += length2 + 1; //add '/'
+
+	pad_length = 16 - raw_length % 16; 
+	total_length = raw_length + pad_length;
+	//send_frame = os_malloc(length + 1);
+	send_frame = os_malloc(total_length + 1);
 	if (NULL == send_frame)
 		os_printf("malloc send_frame fail\n");
-	os_memset(send_frame, 0, length);
+	os_memset(send_frame, 0, total_length);
 	head = send_frame;
 	*send_frame++ = '/';
 	*send_frame++ = 'S';
@@ -390,11 +421,24 @@ void stc_encap_send(uint8 *pcontent2, uint16 length2, web_frame *pweb_frame)
 	
 	*send_frame++ = '\r';
 	*send_frame++ = '\n';
-	espconn_send(espconn_ptr, head, length);
+
+	/* encrypt here */
+	for (i = 0; i < pad_length; i++) 
+	    *send_frame++ = pad_length;
+#ifdef AES_TEST_MODE
+	os_printf("Data before encrypt is");
+	for (i=0;i<total_length;i++) {
+		if (i % 16 ==0)
+			os_printf("\n");
+		os_printf("%02x ", head[i]);
+	}
+#endif	
+	aes_cbc_128_process(MBEDTLS_AES_ENCRYPT, head, total_length);
+	espconn_send(espconn_ptr, head, total_length);
 	os_free(head);
 }
 
-void stc_sign_in()
+void ICACHE_FLASH_ATTR stc_sign_in()
 {
 	uint8 mac[6], hex_mac[12];
 	uint8 i;
@@ -424,7 +468,7 @@ void stc_sign_in()
 	}
 }
 
-void stc_common_send(uint8 *content1, uint8 *content2, uint8 content2_len)
+void ICACHE_FLASH_ATTR stc_common_send(uint8 *content1, uint8 *content2, uint8 content2_len)
 {
 	web_frame frame_data;
 
@@ -436,7 +480,7 @@ void stc_common_send(uint8 *content1, uint8 *content2, uint8 content2_len)
 	stc_encap_send(content2, content2_len, &frame_data);
 }
 
-void stc_req_unlock()
+void ICACHE_FLASH_ATTR stc_req_unlock()
 {
 	web_frame frame_data;
 	uint8 content1[CONTENT1_LEN] = {"808"};
@@ -451,7 +495,7 @@ void stc_req_unlock()
 
 
 
-void gen_rand()
+void ICACHE_FLASH_ATTR gen_rand()
 {
 	int type,i,res;	
 	os_printf("random result is ");
@@ -468,9 +512,4 @@ void gen_rand()
 		g_checksum_code[i] = res;		
 		os_printf("%c ", res);
 	}		
-}
-
-void stc_send_with_timer()
-{
-	
 }

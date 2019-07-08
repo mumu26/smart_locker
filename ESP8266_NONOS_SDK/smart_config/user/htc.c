@@ -20,7 +20,7 @@ extern uint32 priv_param_start_sec;
 extern saved_sta_param saved_sta_cfg;
 extern uint8 g_checksum_code[CHKSUM_CODE_LEN];
 
-unsigned char get_bcc(unsigned char *src, unsigned char len)
+unsigned char ICACHE_FLASH_ATTR get_bcc(unsigned char *src, unsigned char len)
 {
 	unsigned int bcc = 0;
 	unsigned char i;
@@ -38,7 +38,7 @@ unsigned char get_bcc(unsigned char *src, unsigned char len)
  * the output size is double of input size
  * e.g.:110=6E  input[0]=110  output[0]='6', output[1]='E'
  */
-void convert_int2asciihex(uint8 *input, uint8 size, uint8 *output)
+void ICACHE_FLASH_ATTR convert_int2asciihex(uint8 *input, uint8 size, uint8 *output)
 {
 	uint8 tmp[100];//max size is 100 digits
 	uint8 i;
@@ -64,7 +64,7 @@ uint8 ICACHE_FLASH_ATTR htc_config_entry()
 	return  0;
 }
 
-void htc_server_timeout()
+void ICACHE_FLASH_ATTR htc_server_timeout()
 {
 	mcu_pkg reply_cmd;
 	memset(&reply_cmd, 0, sizeof(reply_cmd));
@@ -73,14 +73,14 @@ void htc_server_timeout()
 	os_printf("timeout!!!\n");
 }
 
-void htc_start_timer(uint8 timer_no, uint32_t timeout)
+void ICACHE_FLASH_ATTR htc_start_timer(uint8 timer_no, uint32_t timeout)
 {
 	os_timer_disarm(&mcu_wait_timer[timer_no]);
 	os_timer_setfn(&mcu_wait_timer[timer_no], (os_timer_func_t *)htc_server_timeout, NULL);
 	os_timer_arm(&mcu_wait_timer[timer_no], timeout, 0);
 }
 
-int8 htc_rx_process(uint8 *uart_buf)
+int8 ICACHE_FLASH_ATTR htc_rx_process(uint8 *uart_buf)
 {
 	unsigned char chksum;
 	uint8 ret;
@@ -165,7 +165,7 @@ int8 htc_rx_process(uint8 *uart_buf)
 }
 
 //func and data field should be filled by caller
-void htc_send_reply(mcu_pkg *pMcuCmd)
+void ICACHE_FLASH_ATTR htc_send_reply(mcu_pkg *pMcuCmd)
 {
 	uint8 len = sizeof(mcu_pkg);
 	pMcuCmd->head = HTT_HEAD;

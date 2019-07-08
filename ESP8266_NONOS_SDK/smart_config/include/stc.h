@@ -2,6 +2,8 @@
 
 uint8 init_tcp_connect();
 
+#define AES_TEST_MODE  1
+
 #define DELIMETER '/'
 #define START     'S'
 
